@@ -5,6 +5,7 @@
 #include<string>
 
 using Point = std::pair<int, int>;
+const int NONE = -1;
 enum JITSUName
 {
     SYUNSIN = 0,
@@ -31,7 +32,7 @@ public:
     std::vector<std::vector<int>> id;
     std::vector<Point> point;
     Points() { id.clear(); point.clear(); }
-    Points(int height, int width,int num) :id(height, std::vector<int>(width, -1)), point(num) {}
+    Points(int height, int width,int num) :id(height, std::vector<int>(width, NONE)), point(num) {}
 };
 
 class State
@@ -129,10 +130,10 @@ int getMinDist(State st,Point p1,Point p2)
             nextRow = curRow + dRow[i];
             nextCol = curCol + dCol[i];
             if (nextRow == -1 || nextCol == -1 || nextRow == st.Height || nextCol == st.Width) continue;
-            if (dist.id[nextRow][nextCol] != -1) continue;
-            if (st.dogs.id[nextRow][nextCol] != -1 || st.objects.id[nextRow][nextCol] != -1)
+            if (dist.id[nextRow][nextCol] != NONE) continue;
+            if (st.dogs.id[nextRow][nextCol] != NONE)
             {
-                dist.id[nextRow][nextCol] != INT_MAX / 2;
+                dist.id[nextRow][nextCol] = INT_MAX/2;
                 continue;
             }
             q.push(std::make_pair(nextRow, nextCol));
@@ -151,69 +152,47 @@ void thinkAndRun()
     using std::cout;
     using std::endl;
     using std::string;
-    string nextDir1 = "";
-    for (int k = 0; k < 2; k++)
+    std::vector<string> nextDir(2);
+    int maxStep = 2;
+    for (int ninjaId = 0; ninjaId < myState.ninjas.point.size(); ninjaId++)
     {
-        int min = INT_MAX;
-        int numDir;
-        int numSoul;
-        for (int i = 0; i < myState.souls.point.size(); i++)
+        for (int step = 0; step < maxStep; step++)
         {
-            for (int j = 0; j < 4; j++)
+            int min = INT_MAX;
+            int numDir = 4;
+            int numSoul = 0;
+            for (int soulId = 0; soulId < myState.souls.point.size(); soulId++)
             {
-                int cur = INT_MAX;
-                int nextRow = myState.ninjas.point[0].first + dRow[j];
-                int nextCol = myState.ninjas.point[0].second + dCol[j];
-                if (myState.dogs.id[nextRow][nextCol] == -1 && myState.objects.id[nextRow][nextCol] == -1)
-                    cur = getMinDist(myState, std::make_pair(nextRow, nextCol), myState.souls.point[i]);
-                if (min > cur)
+                for (int dir = 0; dir < 4; dir++)
                 {
-                    min = cur;
-                    numSoul = i;
-                    numDir = j;
+                    int cur = INT_MAX;
+                    int nextRow = myState.ninjas.point[ninjaId].first + dRow[dir];
+                    int nextCol = myState.ninjas.point[ninjaId].second + dCol[dir];
+                    if (!(myState.dogs.id[nextRow][nextCol] != NONE || myState.objects.id[nextRow][nextCol] == WALL ||
+                                                                       (myState.objects.id[nextRow][nextCol] == ROCK &&
+                                                                        (myState.objects.id[nextRow + dRow[dir]][nextCol + dCol[dir]] != NONE ||
+                                                                         myState.dogs.id[nextRow + dRow[dir]][nextCol + dCol[dir]] != NONE ||
+                                                                         myState.ninjas.id[nextRow + dRow[dir]][nextCol + dCol[dir]] != NONE))))
+                        cur = getMinDist(myState, std::make_pair(nextRow, nextCol), myState.souls.point[soulId]);
+                    if (min > cur)
+                    {
+                        min = cur;
+                        numSoul = soulId;
+                        numDir = dir;
+                    }
                 }
             }
+            int curRow = myState.ninjas.point[ninjaId].first + dRow[numDir];
+            int curCol = myState.ninjas.point[ninjaId].second + dCol[numDir];
+            myState.ninjas.point[ninjaId] = std::make_pair(curRow, curCol);
+            if (myState.souls.point[numSoul] == std::make_pair(curRow, curCol))
+                myState.souls.point.erase(myState.souls.point.begin() + numSoul);
+            nextDir[ninjaId] += d[numDir];
         }
-        int curRow = myState.ninjas.point[0].first + dRow[numDir];
-        int curCol = myState.ninjas.point[0].second + dCol[numDir];
-        myState.ninjas.point[0] = std::make_pair(curRow, curCol);
-        if (myState.souls.point[numSoul] == std::make_pair(curRow, curCol))
-            myState.souls.point.erase(myState.souls.point.begin() + numSoul);
-        nextDir1 += d[numDir];
-    }
-    string nextDir2 = "";
-    for (int k = 0; k < 2; k++)
-    {
-        int min = INT_MAX;
-        int numDir;
-        int numSoul;
-        for (int i = 0; i < myState.souls.point.size(); i++)
-        {
-            for (int j = 0; j < 4; j++)
-            {
-                int cur = INT_MAX;
-                int nextRow = myState.ninjas.point[1].first + dRow[j];
-                int nextCol = myState.ninjas.point[1].second + dCol[j];
-                if (myState.dogs.id[nextRow][nextCol] == -1 && myState.objects.id[nextRow][nextCol] == -1)
-                    cur = getMinDist(myState, std::make_pair(nextRow, nextCol), myState.souls.point[i]);
-                if (min > cur)
-                {
-                    min = cur;
-                    numSoul = i;
-                    numDir = j;
-                }
-            }
-        }
-        int curRow = myState.ninjas.point[1].first + dRow[numDir];
-        int curCol = myState.ninjas.point[1].second + dCol[numDir];
-        myState.ninjas.point[1] = std::make_pair(curRow, curCol);
-        if (myState.souls.point[numSoul] == std::make_pair(curRow, curCol))
-            myState.souls.point.erase(myState.souls.point.begin() + numSoul);
-        nextDir2 += d[numDir];
     }
     cout << 2 << endl;
-    cout << nextDir1 << endl;
-    cout << nextDir2 << endl;
+    cout << nextDir[0] << endl;
+    cout << nextDir[1] << endl;
 }
 
 bool input()
