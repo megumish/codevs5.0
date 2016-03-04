@@ -54,7 +54,7 @@ public:
     std::vector<std::vector<int>> field;
     std::vector<int> ids;
     Points() { field.clear(); }
-    Points(int height, int width,int num) :field(height, std::vector<int>(width, NONE)),ids(num){}
+    Points(int height, int width,int num) :field(height, std::vector<int>(width, NONE)){}
     Point getPoint(int id)
     {
         for (int row = 0; row < field.size(); row++)
@@ -183,19 +183,19 @@ Points getMinDist(State st,Point p,Points dist)
 State myState;
 State rivalState;
 
-std::tuple<State,State,JITSUName,std::string> predict(State mySt,State riSt)
+std::tuple<State,State,JITSUName,Point,std::string,std::string> predict(State mySt,State riSt)
 {
     using std::make_tuple;
     using std::get;
     using std::vector;
-    vector<std::tuple<State,State,JITSUName>> statesAfterJITSU;
+    vector<std::tuple<State,State,JITSUName,Point>> statesAfterJITSU;
 
-    statesAfterJITSU.push_back(make_tuple(mySt, riSt, MU));
+    statesAfterJITSU.push_back(make_tuple(mySt, riSt, MU,Point(NONE,NONE)));
 
     if (mySt.skillPoint >= skillCost[SYUNSIN])
     {
         auto predictBySYUNSIN = [](State st) {st.remSteps++; return st; };
-        statesAfterJITSU.push_back(make_tuple(predictBySYUNSIN(mySt), riSt,SYUNSIN));
+        statesAfterJITSU.push_back(make_tuple(predictBySYUNSIN(mySt), riSt,SYUNSIN,Point(NONE,NONE)));
     }
 
     if (mySt.skillPoint >= skillCost[IWA_GAKURE])
@@ -206,7 +206,7 @@ std::tuple<State,State,JITSUName,std::string> predict(State mySt,State riSt)
             for (int col = 0; col < mySt.Width; col++)
             {
                 if (mySt.objects.field[row][col] == -1 && mySt.dogs.field[row][col] == -1 && mySt.ninjas.field[row][col] == -1)
-                    statesAfterJITSU.push_back(make_tuple(predictByIWA_GAKURE(mySt, Point(row, col)), riSt,IWA_GAKURE));
+                    statesAfterJITSU.push_back(make_tuple(predictByIWA_GAKURE(mySt, Point(row, col)), riSt,IWA_GAKURE,Point(row,col)));
             }
         }
     }
@@ -219,7 +219,7 @@ std::tuple<State,State,JITSUName,std::string> predict(State mySt,State riSt)
             for (int col = 0; col < mySt.Width; col++)
             {
                 if (mySt.objects.field[row][col] == ROCK)
-                    statesAfterJITSU.push_back(make_tuple(predictByKAMINARI_GAKURE(mySt, Point(row, col)), riSt,KAMINARI_GAKURE));
+                    statesAfterJITSU.push_back(make_tuple(predictByKAMINARI_GAKURE(mySt, Point(row, col)), riSt,KAMINARI_GAKURE,Point(row,col)));
             }
         }
     }
@@ -232,13 +232,14 @@ std::tuple<State,State,JITSUName,std::string> predict(State mySt,State riSt)
             for (int col = 0; col < mySt.Width; col++)
             {
                 if (mySt.objects.field[row][col] == -1)
-                    statesAfterJITSU.push_back(make_tuple(predictByBUNSIN(mySt, Point(row, col)), riSt, BUNSIN));
+                    statesAfterJITSU.push_back(make_tuple(predictByBUNSIN(mySt, Point(row, col)), riSt, BUNSIN,Point(row,col)));
             }
         }
     }
 
     int maxScore = -INFTY;
-    auto ret = make_tuple(mySt, riSt, MU, std::string(""));
+    int cnt = 0;
+    auto ret = make_tuple(mySt, riSt, MU,Point(NONE,NONE),std::string(""), std::string(""));
     for (int i = 0; i < statesAfterJITSU.size(); i++)
     {
         auto states = statesAfterJITSU[i];
@@ -260,130 +261,142 @@ std::tuple<State,State,JITSUName,std::string> predict(State mySt,State riSt)
                 steps.push_back(DOWN);  q.push(steps); steps.erase(steps.end() - 1);
             }
         }
-        for (auto& steps : enableSteps)
+        vector<vector<Direction>> steps(2);
+        for (int step1 = 0; step1 < enableSteps.size(); step1++)
         {
-            //参照値だったらどうしよう。右辺値参照だから大丈夫？
-            auto newMySt = get<0>(states);
-            if ([&newMySt, &steps]()
+            steps[0] = enableSteps[step1];
+            for (int step2 = 0; step2 < enableSteps.size(); step2++)
             {
-                //忍者が歩く
-                for (int ninjaId = 0; ninjaId < newMySt.ninjas.ids.size(); ninjaId++)
+                steps[1] = enableSteps[step2];
+                cnt++;
+                //参照値だったらどうしよう。右辺値参照だから大丈夫?
+                auto newMySt = get<0>(states);
+                if ([&newMySt, &steps]()
                 {
-                    for (auto& dir : steps)
+                    //忍者が歩く
+                    for (int ninjaId = 0; ninjaId < newMySt.ninjas.ids.size(); ninjaId++)
                     {
-                        int nextRow = newMySt.ninjas.getPoint(ninjaId).row + dRow[dir];
-                        int nextCol = newMySt.ninjas.getPoint(ninjaId).col + dCol[dir];
-                        if (newMySt.objects.field[nextRow][nextCol] == WALL) return false;
-                        if (newMySt.objects.field[nextRow][nextCol] == ROCK)
+                        for (auto& dir : steps[ninjaId])
                         {
-                            if (newMySt.objects.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != -1 ||
-                                newMySt.dogs.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != -1 ||
-                                newMySt.ninjas.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != -1) return false;
+                            int nextRow = newMySt.ninjas.getPoint(ninjaId).row + dRow[dir];
+                            int nextCol = newMySt.ninjas.getPoint(ninjaId).col + dCol[dir];
+                            if (newMySt.objects.field[nextRow][nextCol] == WALL) return false;
+                            if (newMySt.objects.field[nextRow][nextCol] == ROCK)
+                            {
+                                if (newMySt.objects.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != -1 ||
+                                    newMySt.dogs.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != -1 ||
+                                    newMySt.ninjas.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != -1) return false;
+                                else
+                                {
+                                    newMySt.objects.field[nextRow][nextCol] = NONE;
+                                    newMySt.objects.field[nextRow + dRow[dir]][nextCol + dCol[dir]] = ROCK;
+                                }
+                            }
+                            newMySt.ninjas.field[newMySt.ninjas.getPoint(ninjaId).row][newMySt.ninjas.getPoint(ninjaId).col] = NONE;
+                            newMySt.ninjas.field[nextRow][nextCol] = ninjaId;
+                            if (newMySt.souls.field[nextRow][nextCol] != NONE)
+                            {
+                                newMySt.souls.field[nextRow][nextCol] = NONE;
+                                newMySt.skillPoint++;
+                            }
+                        }
+                    }
+                    //犬が歩く。犬は犬の動きたいほうに動くと仮定。つまり犬と犬が重なることはない。
+                    for (auto& dogId : newMySt.dogs.ids)
+                    {
+                        Point curDogPoint = newMySt.dogs.getPoint(dogId);
+                        Points collision(newMySt.Height, newMySt.Width, 0);
+                        for (int row = 0; row < newMySt.Height; row++)
+                        {
+                            for (int col = 0; col < newMySt.Width; col++)
+                            {
+                                if (newMySt.objects.field[row][col] != -1) collision.field[row][col] = INFTY;
+                            }
+                        }
+                        int numDir = NOMOVE;
+                        int min = INFTY;
+                        for (int dir = 0; dir < 4; dir++)
+                        {
+                            int nextRow = newMySt.dogs.getPoint(dogId).row + dRow[dir];
+                            int nextCol = newMySt.dogs.getPoint(dogId).col + dCol[dir];
+                            if (newMySt.objects.field[nextRow][nextCol] != -1) continue;
+                            Points points = getMinDist(newMySt, Point(nextRow, nextCol), collision);
+                            if (newMySt.ninjaSmells.ids.size() == 0)
+                            {
+                                for (auto& ninjaId : newMySt.ninjas.ids)
+                                {
+                                    Point ninjaPoint = newMySt.ninjas.getPoint(ninjaId);
+                                    if (min > points.field[ninjaPoint.row][ninjaPoint.col])
+                                    {
+                                        min = points.field[ninjaPoint.row][ninjaPoint.col];
+                                        numDir = dir;
+                                    }
+                                }
+                            }
                             else
                             {
-                                newMySt.objects.field[nextRow][nextCol] = NONE;
-                                newMySt.objects.field[nextRow + dRow[dir]][nextCol + dCol[dir]] = ROCK;
-                            }
-                        }
-                        newMySt.ninjas.field[newMySt.ninjas.getPoint(ninjaId).row][newMySt.ninjas.getPoint(ninjaId).col] = NONE;
-                        newMySt.ninjas.field[nextRow][nextCol] = ninjaId;
-                        if (newMySt.souls.field[nextRow][nextCol] != NONE)
-                        {
-                            newMySt.souls.field[nextRow][nextCol] = NONE;
-                            newMySt.skillPoint++;
-                        }
-                    }
-                }
-                //犬が歩く。犬は犬の動きたいほうに動くと仮定。つまり犬と犬が重なることはない。
-                for (auto& dogId : newMySt.dogs.ids)
-                {
-                    Point curDogPoint = newMySt.dogs.getPoint(dogId);
-                    Points collision(newMySt.Height, newMySt.Width, 0);
-                    for (int row = 0; row < newMySt.Height; row++)
-                    {
-                        for (int col = 0; col < newMySt.Width; col++)
-                        {
-                            if (newMySt.objects.field[row][col] != -1) collision.field[row][col] = INFTY;
-                        }
-                    }
-                    int numDir = NOMOVE;
-                    int min = INFTY;
-                    for (int dir = 0; dir < 4; dir++)
-                    {
-                        int nextRow = newMySt.dogs.getPoint(dogId).row + dRow[dir];
-                        int nextCol = newMySt.dogs.getPoint(dogId).col + dCol[dir];
-                        if (newMySt.objects.field[nextRow][nextCol] != -1) continue;
-                        Points points = getMinDist(newMySt, Point(nextRow, nextCol), collision);
-                        if (newMySt.ninjaSmells.ids.size() == 0)
-                        {
-                            for (auto& ninjaId : newMySt.ninjas.ids)
-                            {
-                                Point ninjaPoint = newMySt.ninjas.getPoint(ninjaId);
-                                if (min > points.field[ninjaPoint.row][ninjaPoint.col])
+                                for (int ninjaSmellId = 0; ninjaSmellId < newMySt.ninjaSmells.ids.size(); ninjaSmellId++)
                                 {
-                                    min = points.field[ninjaPoint.row][ninjaPoint.col];
-                                    numDir = dir;
+                                    Point ninjaSmellPoint = newMySt.ninjas.getPoint(ninjaSmellId);
+                                    if (ninjaSmellPoint == Point(NONE, NONE)) continue;
+                                    if (min > points.field[ninjaSmellPoint.row][ninjaSmellPoint.col])
+                                    {
+                                        min = points.field[ninjaSmellPoint.row][ninjaSmellPoint.col];
+                                        numDir = dir;
+                                    }
                                 }
                             }
                         }
-                        else
+                        Point nextDogPoint = Point(curDogPoint.row + dRow[numDir], curDogPoint.col + dCol[numDir]);
+                        //マジックナンバーを使っているのであとから書きかえたい。
+                        if (nextDogPoint == newMySt.ninjas.getPoint(0) || nextDogPoint == newMySt.ninjas.getPoint(1)) return false;
+                        newMySt.dogs.field[curDogPoint.row][curDogPoint.col] = NONE;
+                        newMySt.dogs.field[nextDogPoint.row][nextDogPoint.col];
+                    }
+                    return true;
+                }())
+                {
+                    vector<int> minSoulDist(mySt.ninjas.ids.size());
+                    auto getMinSoulDist = [&newMySt](int ninjaId)
+                    {
+                        int minDist = INFTY;
+                        //すべての岩を通れないと仮定
+                        Points collision(newMySt.Height, newMySt.Width, 0);
+                        for (int row = 0; row < newMySt.Height; row++)
                         {
-                            for (int ninjaSmellId = 0; ninjaSmellId < newMySt.ninjaSmells.ids.size(); ninjaSmellId++)
+                            for (int col = 0; col < newMySt.Width; col++)
                             {
-                                Point ninjaSmellPoint = newMySt.ninjas.getPoint(ninjaSmellId);
-                                if (ninjaSmellPoint == Point(NONE, NONE)) continue;
-                                if (min > points.field[ninjaSmellPoint.row][ninjaSmellPoint.col])
-                                {
-                                    min = points.field[ninjaSmellPoint.row][ninjaSmellPoint.col];
-                                    numDir = dir;
-                                }
+                                if (newMySt.objects.field[row][col] != -1) collision.field[row][col] = INFTY;
                             }
                         }
-                    }
-                    Point nextDogPoint = Point(curDogPoint.row + dRow[numDir], curDogPoint.col + dCol[numDir]);
-                    //マジックナンバーを使っているのであとから書きかえたい。
-                    if (nextDogPoint == newMySt.ninjas.getPoint(0) || nextDogPoint == newMySt.ninjas.getPoint(1)) return false;
-                    newMySt.dogs.field[curDogPoint.row][curDogPoint.col] = NONE;
-                    newMySt.dogs.field[nextDogPoint.row][nextDogPoint.col];
-                }
-                return true;
-            }())
-            {
-                vector<int> minSoulDist(mySt.ninjas.ids.size());
-                auto getMinSoulDist = [&newMySt](int ninjaId)
-                {
-                    int minDist = INFTY;
-                    //すべての岩を通れないと仮定
-                    Points collision(newMySt.Height, newMySt.Width, 0);
-                    for (int row = 0; row < newMySt.Height; row++)
-                    {
-                        for (int col = 0; col < newMySt.Width; col++)
+                        //なぜか忍者が一人消えているときがある。
+                        Points points = getMinDist(newMySt, newMySt.ninjas.getPoint(ninjaId), collision);
+                        for (auto& soulId : newMySt.souls.ids)
                         {
-                            if (newMySt.objects.field[row][col] != -1) collision.field[row][col] = INFTY;
+                            Point soulPoint = newMySt.souls.getPoint(soulId);
+                            if (soulPoint == Point(NONE, NONE)) continue;
+                            if (minDist > points.field[soulPoint.row][soulPoint.col])
+                            {
+                                minDist = points.field[soulPoint.row][soulPoint.col];
+                            }
                         }
-                    }
-                    Points points = getMinDist(newMySt, newMySt.ninjas.getPoint(ninjaId), collision);
-                    for (auto& soulId : newMySt.souls.ids)
+                        return minDist;
+                    };
+                    int curScore = (100 - getMinSoulDist(0)) + (100 - getMinSoulDist(1)) + newMySt.skillPoint*100;
+                    if (maxScore < curScore)
                     {
-                        Point soulPoint = newMySt.souls.getPoint(soulId);
-                        if (soulPoint == Point(NONE, NONE)) continue;
-                        if (minDist > points.field[soulPoint.row][soulPoint.col])
+                        maxScore = curScore;
+                        vector<std::string> stepsStr(2, std::string(""));
+                        for (auto& dir : steps[0])
                         {
-                            minDist = points.field[soulPoint.row][soulPoint.col];
+                            stepsStr[0] += d[dir];
                         }
+                        for (auto& dir : steps[1])
+                        {
+                            stepsStr[1] += d[dir];
+                        }
+                        ret = make_tuple(get<0>(states), get<1>(states), get<2>(states),get<3>(states), stepsStr[0],stepsStr[1]);
                     }
-                    return minDist;
-                };
-                int curScore = (100 - getMinSoulDist(0)) + (100 - getMinSoulDist(1)) + newMySt.skillPoint;
-                if (maxScore < curScore)
-                {
-                    maxScore = curScore;
-                    std::string stepsStr = "";
-                    for (auto& dir : steps)
-                    {
-                        stepsStr += d[dir];
-                    }
-                    ret = make_tuple(get<0>(states), get<1>(states), get<2>(states), stepsStr);
                 }
             }
         }
@@ -403,10 +416,10 @@ void thinkAndRun()
     else
     {
         cout << 3 << endl;
-        cout << get<2>(nextAction) << endl;
+        cout << get<2>(nextAction) << " " << get<3>(nextAction).row << " " << get<3>(nextAction).col << endl;
     }
-    cout << get<3>(nextAction) << endl;
-    cout << get<3>(nextAction) << endl;
+    cout << get<4>(nextAction) << endl;
+    cout << get<5>(nextAction) << endl;
 }
 
 
