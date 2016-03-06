@@ -184,6 +184,7 @@ Points getMinDist(State st,Point p,Points dist)
 State myState;
 State rivalState;
 std::vector<std::vector<Direction>> enableSteps;
+JITSUName enableJitsu;
 
 std::tuple<State,State,JITSUName,Point,std::string,std::string> predict(State mySt,State riSt)
 {
@@ -191,6 +192,125 @@ std::tuple<State,State,JITSUName,Point,std::string,std::string> predict(State my
     using std::get;
     using std::vector;
 
+    JITSUName useJitsu = MU;
+    Point usePoint = Point(NONE, NONE);
+    if (enableJitsu == SYUNSIN && mySt.skillPoint >= skillCost[SYUNSIN])
+    {
+        mySt.remSteps = 3;
+        useJitsu = SYUNSIN;
+    }
+
+    if (enableJitsu == BUNSIN && mySt.skillPoint >= skillCost[BUNSIN])
+    {
+        if ([&]()
+        {
+            for (auto& ninjaId : mySt.ninjas.ids)
+            {
+                Point ninjaPoint = mySt.ninjas.getPoint(ninjaId);
+                for (int dir = 0; dir < 4; dir++)
+                {
+                    if (mySt.dogs.field[ninjaPoint.row + dRow[dir]][ninjaPoint.col + dCol[dir]] != NONE) return true;
+                }
+            }
+            return false;
+        }())
+        {
+            for (auto& ninjaId : mySt.ninjas.ids)
+            {
+                Point ninjaPoint = mySt.ninjas.getPoint(ninjaId);
+                for (int dir = 0; dir < 4; dir++)
+                {
+                    if (mySt.dogs.field[ninjaPoint.row + dRow[dir]][ninjaPoint.col + dCol[dir]] != NONE)
+                    {
+                        mySt.dogs.field[ninjaPoint.row + dRow[dir]][ninjaPoint.col + dCol[dir]] = NONE;
+                        int newDogId = mySt.dogs.ids.size();
+                        mySt.dogs.ids.push_back(newDogId);
+                        mySt.dogs.field[ninjaPoint.row + dRow[dir] * 2][ninjaPoint.col + dCol[dir] * 2] = newDogId;
+                    }
+                }
+            }
+            useJitsu = BUNSIN;
+            int max = -INFTY;
+            Points collision(mySt.Height,mySt.Width,0);
+            Points ninjaDist0 = getMinDist(mySt, mySt.ninjas.getPoint(0), collision);
+            Points ninjaDist1 = getMinDist(mySt, mySt.ninjas.getPoint(1), collision);
+            for (int row = 0; row < mySt.Height; row++)
+            {
+                for (int col = 0; col < mySt.Width; col++)
+                {
+                    int cur = ninjaDist0.field[row][col] + ninjaDist1.field[row][col];
+                    if (max < cur && mySt.objects.field[row][col] == NONE)
+                    {
+                        max = cur;
+                        usePoint = Point(row, col);
+                    }
+                }
+            }
+        }
+    }
+
+    if (enableJitsu == TENSOUMETSU && mySt.skillPoint >= skillCost[TENSOUMETSU])
+    {
+        int useNinja = 0;
+        if ([&]()
+        {
+            int max = -INFTY;
+            for (auto& ninjaId : mySt.ninjas.ids)
+            {
+                int numDogs = 0;
+                Point ninjaPoint = mySt.ninjas.getPoint(ninjaId);
+                for (int dir = 0; dir < 4; dir++)
+                {
+                    if (mySt.dogs.field[ninjaPoint.row + dRow[dir]][ninjaPoint.col + dCol[dir]] != NONE)
+                    {
+                        numDogs++;
+                    }
+                }
+                if (max < numDogs)
+                {
+                    max = numDogs;
+                    useNinja = ninjaId;
+                }
+            }
+            if (max >= 2) return true;
+            return false;
+        }())
+        {
+            for (auto& ninjaId : mySt.ninjas.ids)
+            {
+                Point ninjaPoint = mySt.ninjas.getPoint(ninjaId);
+                for (int dir = 0; dir < 4; dir++)
+                {
+                    if (mySt.dogs.field[ninjaPoint.row + dRow[dir]][ninjaPoint.col + dCol[dir]] != NONE)
+                    {
+                        mySt.dogs.field[ninjaPoint.row + dRow[dir]][ninjaPoint.col + dCol[dir]] = NONE;
+                    }
+                }
+            }
+            useJitsu = TENSOUMETSU;
+            usePoint = Point(useNinja, NONE);
+        }
+    }
+
+    enableSteps.clear();
+    std::queue<vector<Direction>> q;
+    q.push(vector<Direction>(1, UP));
+    q.push(vector<Direction>(1, LEFT));
+    q.push(vector<Direction>(1, RIGHT));
+    q.push(vector<Direction>(1, DOWN));
+    while (!q.empty())
+    {
+        auto steps = q.front(); q.pop();
+        enableSteps.push_back(steps);
+        if (steps.size() < mySt.remSteps)
+        {
+            steps.push_back(UP);    q.push(steps); steps.erase(steps.end() - 1);
+            steps.push_back(LEFT);  q.push(steps); steps.erase(steps.end() - 1);
+            steps.push_back(RIGHT); q.push(steps); steps.erase(steps.end() - 1);
+            steps.push_back(DOWN);  q.push(steps); steps.erase(steps.end() - 1);
+        }
+    }
+    std::reverse(enableSteps.begin(), enableSteps.end());
     auto ret = make_tuple(mySt, riSt, MU, Point(NONE, NONE), std::string(""), std::string(""));
     int maxScore = -INFTY;
 
@@ -263,37 +383,55 @@ std::tuple<State,State,JITSUName,Point,std::string,std::string> predict(State my
                 {
                     int soulMinDist = INFTY;
                     int dogMinDist  = INFTY;
-                    //すべての岩を通れないと仮定。ただし忍者周りの通行可能な意思は通れると仮定。
-                    //すべての岩が通れないと仮定した方が強いっぽい？（N=1)
-                    Points collision(newMySt.Height, newMySt.Width, 0);
+                    //すべての岩を通れないと仮定。ただし四方が他のもので囲われていない岩は通れると仮定
+                    Points soulCollision(newMySt.Height, newMySt.Width, 0);
                     for (int row = 0; row < newMySt.Height; row++)
                     {
                         for (int col = 0; col < newMySt.Width; col++)
                         {
-                            if (newMySt.objects.field[row][col] != -1) collision.field[row][col] = INFTY;
+                            if (newMySt.objects.field[row][col] != -1) soulCollision.field[row][col] = INFTY;
+                            if (newMySt.objects.field[row][col] == ROCK)
+                            {
+                                int numBlock = 0;
+                                for (int dir = 0; dir < 4; dir++)
+                                {
+                                    if (newMySt.objects.field[row + dRow[dir]][col + dCol[dir]] == -1 ||
+                                        newMySt.dogs.field[row + dRow[dir]][col + dCol[dir]]    == -1 ) numBlock++;
+                                }
+                                if (numBlock != 4) soulCollision.field[row][col] = NONE;
+                            }
                         }
                     }
-                    Points points = getMinDist(newMySt, newMySt.ninjas.getPoint(ninjaId), collision);
+                    Points dogCollision(newMySt.Height, newMySt.Width, 0);
+                    for (int row = 0; row < newMySt.Height; row++)
+                    {
+                        for (int col = 0; col < newMySt.Width; col++)
+                        {
+                            if (newMySt.objects.field[row][col] != -1) dogCollision.field[row][col] = INFTY;
+                        }
+                    }
+                    Points soulpoints = getMinDist(newMySt, newMySt.ninjas.getPoint(ninjaId), soulCollision);
                     for (auto& soulId : newMySt.souls.ids)
                     {
                         Point soulPoint = newMySt.souls.getPoint(soulId);
                         if (soulPoint == Point(NONE, NONE)) continue;
-                        if (soulMinDist > points.field[soulPoint.row][soulPoint.col])
+                        if (soulMinDist > soulpoints.field[soulPoint.row][soulPoint.col])
                         {
-                            soulMinDist = points.field[soulPoint.row][soulPoint.col];
+                            soulMinDist = soulpoints.field[soulPoint.row][soulPoint.col];
                         }
                     }
+                    Points dogpoints = getMinDist(newMySt, newMySt.ninjas.getPoint(ninjaId), dogCollision);
                     for (auto& dogId : newMySt.dogs.ids)
                     {
                         Point dogPoint = newMySt.dogs.getPoint(dogId);
                         if (dogPoint == Point(NONE, NONE)) continue;
-                        if (dogMinDist > points.field[dogPoint.row][dogPoint.col])
+                        if (dogMinDist > dogpoints.field[dogPoint.row][dogPoint.col])
                         {
-                            dogMinDist = points.field[dogPoint.row][dogPoint.col];
+                            dogMinDist = dogpoints.field[dogPoint.row][dogPoint.col];
                         }
                     }
-                    if(dogMinDist >= 4 && dogMinDist <= 5) return dogMinDist;
-                    return dogMinDist-soulMinDist;
+                    if (dogMinDist <= 4) return dogMinDist;
+                    return -soulMinDist;
                 };
                 int curScore = evaluateDistForSoulAndDog(0) + evaluateDistForSoulAndDog(1) + newMySt.skillPoint * 100;
                 if (maxScore < curScore)
@@ -308,7 +446,7 @@ std::tuple<State,State,JITSUName,Point,std::string,std::string> predict(State my
                     {
                         stepsStr[1] += d[dir];
                     }
-                    ret = make_tuple(newMySt,riSt,MU,Point(NONE,NONE),stepsStr[0],stepsStr[1]);
+                    ret = make_tuple(newMySt,riSt,useJitsu,usePoint,stepsStr[0],stepsStr[1]);
                 }
             }
         }
@@ -324,9 +462,17 @@ void thinkAndRun()
     using std::string;
     std::vector<string> nextDir(2);
     auto nextAction = predict(myState, rivalState);
-    if (get<4>(nextAction) == "") cout << 3 << endl << "7 0" << endl;
-    else if (get<5>(nextAction) == "") cout << 3 << endl << "7 1" << endl;
-    else if (get<2>(nextAction) == MU) cout << 2 << endl;
+    if (get<2>(nextAction) == MU) cout << 2 << endl;
+    else if (get<2>(nextAction) == SYUNSIN)
+    {
+        cout << 3 << endl;
+        cout << get<2>(nextAction) << endl;
+    }
+    else if (get<2>(nextAction) == TENSOUMETSU)
+    {
+        cout << 3 << endl;
+        cout << get<2>(nextAction) << " " << get<3>(nextAction).row << endl;
+    }
     else
     {
         cout << 3 << endl;
@@ -353,6 +499,18 @@ bool input()
         skillCost.push_back(cost);
     }
 
+    if (skillCost[SYUNSIN] <= 3)
+    {
+        enableJitsu = SYUNSIN;
+    }
+    else if (skillCost[TENSOUMETSU] <= 10)
+    {
+        enableJitsu = TENSOUMETSU;
+    }
+    else
+    {
+        enableJitsu = BUNSIN;
+    }
     myState.input(numOfSkills);
     rivalState.input(numOfSkills);
     return true;
@@ -363,24 +521,7 @@ int main()
     using std::cout;
     using std::endl;
     using std::vector;
-    std::queue<vector<Direction>> q;
-    q.push(vector<Direction>(1, UP));
-    q.push(vector<Direction>(1, LEFT));
-    q.push(vector<Direction>(1, RIGHT));
-    q.push(vector<Direction>(1, DOWN));
-    while (!q.empty())
-    {
-        auto steps = q.front(); q.pop();
-        enableSteps.push_back(steps);
-        if (steps.size() < 2)
-        {
-            steps.push_back(UP);    q.push(steps); steps.erase(steps.end() - 1);
-            steps.push_back(LEFT);  q.push(steps); steps.erase(steps.end() - 1);
-            steps.push_back(RIGHT); q.push(steps); steps.erase(steps.end() - 1);
-            steps.push_back(DOWN);  q.push(steps); steps.erase(steps.end() - 1);
-        }
-    }
-    std::reverse(enableSteps.begin(),enableSteps.end());
+
     cout << "NINJAROCK" << endl;
     cout.flush();
 
