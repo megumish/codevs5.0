@@ -5,6 +5,7 @@
 #include<string>
 #include<map>
 #include<random>
+#include<functional>
 
 const int NONE = 100000000;
 enum JITSUName
@@ -177,36 +178,32 @@ public:
     }
 };
 
-//Points getMinDist(State st,Point p,Points dist)
-//{
-//    std::queue<Point> q;
-//    q.push(p);
-//    dist.field[p.row][p.col] = 0;
-//    while (!(q.empty()))
-//    {
-//        int curRow, curCol;
-//        curRow = q.front().row;
-//        curCol = q.front().col; q.pop();
-//        for (int i = 0; i < 4; i++)
-//        {
-//            int nextRow, nextCol;
-//            nextRow = curRow + dRow[i];
-//            nextCol = curCol + dCol[i];
-//            if (nextRow == -1 || nextCol == -1 || nextRow == st.Height || nextCol == st.Width) continue;
-//            if (dist.field[nextRow][nextCol] != NONE) continue;
-//            q.push(Point(nextRow, nextCol));
-//            dist.field[nextRow][nextCol] = dist.field[curRow][curCol] + 1;
-//        }
-//    }
-//    for (int row = 0; row < st.Height; row++)
-//    {
-//        for (int col = 0; col < st.Width; col++)
-//        {
-//            if (dist.field[row][col] == NONE) dist.field[row][col] = INFTY;
-//        }
-//    }
-//    return dist;
-//}
+class States
+{
+public:
+    State mySt;
+    State riSt;
+    std::vector<int> firstSteps;
+    JITSUName firstJitsu;
+    Point firstPoint;
+    bool isFirst;
+    States(State mySt, State riSt) :firstSteps(2), firstPoint(mySt.Height, mySt.Width)
+    {
+        this->mySt = mySt;
+        this->riSt = riSt;
+        firstJitsu = MU;
+        isFirst = true;
+    }
+    States(State mySt, State riSt, std::vector<int> firstSteps, JITSUName firstJitsu, Point firstPoint)
+    {
+        this->mySt = mySt;
+        this->riSt = riSt;
+        this->firstSteps = firstSteps;
+        this->firstJitsu = firstJitsu;
+        this->firstPoint = firstPoint;
+        isFirst = false;
+    }
+};
 
 State myState;
 State rivalState;
@@ -226,14 +223,77 @@ int evaluate(State& mySt, State& riSt)
     {
         //return å¢Ç™é¸ÇËÇ…ëΩÇ¢ÇŸÇ«ÅAëÂÇ´Ç¢ï]âø
     }
+    Point ninjaPoint0 = mySt.ninjas.getPoint(0);
+    std::queue<Point> q;
+    q.push(ninjaPoint0);
 
-    std::random_device seed_gen;
-    std::mt19937 engine(seed_gen());
-    std::uniform_int_distribution<> dist(1, 1000);
-    return dist(engine);
+    Points points0(mySt.Height, mySt.Width, 0);
+    points0.field[ninjaPoint0.row][ninjaPoint0.col] = 0;
+    while (!q.empty())
+    {
+        Point point = q.front(); q.pop();
+        for (int dir = 0; dir < 4; dir++)
+        {
+            int nextRow = point.row + dRow[dir];
+            int nextCol = point.col + dCol[dir];
+            if (nextRow == 0 || nextCol == 0 || nextRow == mySt.Height || nextCol == mySt.Width) continue;
+            if (mySt.objects.field[nextRow][nextCol] == NONE && mySt.dogs.field[nextRow][nextCol] == NONE && points0.field[nextRow][nextCol] == NONE)
+            {
+                q.push(Point(nextRow, nextCol));
+                points0.field[nextRow][nextCol] = points0.field[point.row][point.col] + 1;
+            }
+        }
+    }
+
+    Point ninjaPoint1 = mySt.ninjas.getPoint(1);
+    q.push(ninjaPoint1);
+
+    Points points1(mySt.Height, mySt.Width, 0);
+    points1.field[ninjaPoint1.row][ninjaPoint1.col] = 0;
+    while (!q.empty())
+    {
+        Point point = q.front(); q.pop();
+        for (int dir = 0; dir < 4; dir++)
+        {
+            int nextRow = point.row + dRow[dir];
+            int nextCol = point.col + dCol[dir];
+            if (nextRow == 0 || nextCol == 0 || nextRow == mySt.Height || nextCol == mySt.Width) continue;
+            if (mySt.objects.field[nextRow][nextCol] == NONE && mySt.dogs.field[nextRow][nextCol] == NONE && points1.field[nextRow][nextCol] == NONE)
+            {
+                q.push(Point(nextRow, nextCol));
+                points1.field[nextRow][nextCol] = points1.field[point.row][point.col] + 1;
+            }
+        }
+    }
+
+    int soulMinDist0;
+    soulMinDist0 = NONE+1;
+    for (auto& soulId : mySt.souls.ids)
+    {
+        Point soulPoint = mySt.souls.getPoint(soulId);
+        if (soulPoint == Point(NONE, NONE)) continue;
+        if (soulMinDist0 > points0.field[soulPoint.row][soulPoint.col])
+        {
+            soulMinDist0 = points0.field[soulPoint.row][soulPoint.col];
+        }
+    }
+
+    int soulMinDist1;
+    soulMinDist1 = NONE + 1;
+    for (auto& soulId : mySt.souls.ids)
+    {
+        Point soulPoint = mySt.souls.getPoint(soulId);
+        if (soulPoint == Point(NONE, NONE)) continue;
+        if (soulMinDist1 > points1.field[soulPoint.row][soulPoint.col])
+        {
+            soulMinDist1 = points1.field[soulPoint.row][soulPoint.col];
+        }
+    }
+
+    return (100-soulMinDist0 + -soulMinDist1 + mySt.jitsuPoint * 100);
 }
 
-std::tuple<State,State,JITSUName,Point,std::string,std::string> predict(State mySt,State riSt)
+std::tuple<JITSUName,Point,std::string,std::string> predict(State mySt,State riSt)
 {
     using std::vector;
     volatile int dogSize = mySt.dogs.ids.size();
@@ -263,175 +323,225 @@ std::tuple<State,State,JITSUName,Point,std::string,std::string> predict(State my
         }
     }
     std::reverse(enableSteps.begin(), enableSteps.end());
-    auto ret = make_tuple(mySt, riSt, MU, Point(NONE, NONE), std::string(""), std::string(""));
+    auto ret = make_tuple(MU, Point(NONE, NONE), std::string(""), std::string(""));
     int maxScore = -NONE;
+    std::multimap<int, States,std::greater<int>> scores;
 
-    vector<vector<Direction>> steps(2);
-    for (int step1 = 0; step1 < enableSteps.size(); step1++)
+    vector<States> goodChoice;
+    std::queue<States> statesQ;
+    statesQ.push(States(mySt, riSt));
+    int count = 0;
+    while (count < 3)
     {
-        steps[0] = enableSteps[step1];
-        for (int step2 = 0; step2 < enableSteps.size(); step2++)
+        if (statesQ.empty())
         {
-            steps[1] = enableSteps[step2];
-            State newMySt = mySt;
-            if ([&newMySt, &steps]()
+            count++;
+            int i = 0;
+            if (scores.size() != 0)
             {
-                //îEé“Ç™ï‡Ç≠
-                for (int ninjaId = 0; ninjaId < newMySt.ninjas.ids.size(); ninjaId++)
+                goodChoice.push_back(scores.begin()->second);
+                for (auto& score : scores)
                 {
-                    for (auto& dir : steps[ninjaId])
+                    if (i >= 10) break;
+                    statesQ.push(score.second);
+                    i++;
+                }
+                scores.clear();
+                continue;
+            }
+            else
+                break;
+        }
+        auto states = statesQ.front(); statesQ.pop();
+        vector<vector<Direction>> steps(2);
+        for (int step1 = 0; step1 < enableSteps.size(); step1++)
+        {
+            steps[0] = enableSteps[step1];
+            for (int step2 = 0; step2 < enableSteps.size(); step2++)
+            {
+                steps[1] = enableSteps[step2];
+                State newMySt = states.mySt;
+                if ([&newMySt, &steps]()
+                {
+                    //îEé“Ç™ï‡Ç≠
+                    for (int ninjaId = 0; ninjaId < newMySt.ninjas.ids.size(); ninjaId++)
                     {
-                        Point nowPoint = newMySt.ninjas.getPoint(ninjaId);
-                        int nextRow = nowPoint.row + dRow[dir];
-                        int nextCol = nowPoint.col + dCol[dir];
-                        if (newMySt.objects.field[nextRow][nextCol] == WALL) return false;
-                        if (newMySt.objects.field[nextRow][nextCol] == ROCK)
+                        for (auto& dir : steps[ninjaId])
                         {
-                            if (newMySt.objects.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != NONE ||
-                                newMySt.dogs.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != NONE ||
-                                newMySt.ninjas.field[nextRow + dRow[dir]][nextCol + dCol[dir]].ids.size() != 0) return false;
-                            else
+                            Point nowPoint = newMySt.ninjas.getPoint(ninjaId);
+                            int nextRow = nowPoint.row + dRow[dir];
+                            int nextCol = nowPoint.col + dCol[dir];
+                            if (newMySt.objects.field[nextRow][nextCol] == WALL) return false;
+                            if (newMySt.objects.field[nextRow][nextCol] == ROCK)
                             {
-                                newMySt.objects.field[nextRow][nextCol] = NONE;
-                                newMySt.objects.field[nextRow + dRow[dir]][nextCol + dCol[dir]] = ROCK;
+                                if (newMySt.objects.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != NONE ||
+                                    newMySt.dogs.field[nextRow + dRow[dir]][nextCol + dCol[dir]] != NONE ||
+                                    newMySt.ninjas.field[nextRow + dRow[dir]][nextCol + dCol[dir]].ids.size() != 0) return false;
+                                else
+                                {
+                                    newMySt.objects.field[nextRow][nextCol] = NONE;
+                                    newMySt.objects.field[nextRow + dRow[dir]][nextCol + dCol[dir]] = ROCK;
+                                }
+                            }
+                            auto& ninjaCell = newMySt.ninjas.field[nowPoint.row][nowPoint.col];
+                            ninjaCell.ids.erase(find(ninjaCell.ids.begin(), ninjaCell.ids.end(), ninjaId));
+                            newMySt.ninjas.field[nextRow][nextCol].ids.push_back(ninjaId);
+                            if (newMySt.souls.field[nextRow][nextCol] != NONE)
+                            {
+                                newMySt.souls.field[nextRow][nextCol] = NONE;
+                                newMySt.jitsuPoint++;
                             }
                         }
-                        auto& ninjaCell = newMySt.ninjas.field[nowPoint.row][nowPoint.col];
-                        ninjaCell.ids.erase(find(ninjaCell.ids.begin(), ninjaCell.ids.end(), ninjaId));
-                        newMySt.ninjas.field[nextRow][nextCol].ids.push_back(ninjaId);
-                        if (newMySt.souls.field[nextRow][nextCol] != NONE)
-                        {
-                            newMySt.souls.field[nextRow][nextCol] = NONE;
-                            newMySt.jitsuPoint++;
-                        }
                     }
-                }
-                //std::cerr << "å¢à⁄ìÆëO:" << std::endl;
-                //for (int row = 0; row < newMySt.Height; row++)
-                //{
-                //    for (int col = 0; col < newMySt.Width; col++)
-                //    {
-                //        if (newMySt.ninjas.field[row][col].ids.size() != 0) std::cerr << "N";
-                //        else if (newMySt.dogs.field[row][col] != NONE) std::cerr << "D";
-                //        else std::cerr << "X";
-                //    }
-                //    std::cerr << std::endl;
-                //}
-                //å¢Ç™ï‡Ç≠
-                //Ç»Ç∫Ç©å¢Ç…è’ìÀÇµÇƒÇµÇ‹Ç§ÅB
-                Point ninjaPoint0 = newMySt.ninjas.getPoint(0);
-                std::queue<Point> q;
-                q.push(ninjaPoint0);
+                    //std::cerr << "å¢à⁄ìÆëO:" << std::endl;
+                    //for (int row = 0; row < newMySt.Height; row++)
+                    //{
+                    //    for (int col = 0; col < newMySt.Width; col++)
+                    //    {
+                    //        if (newMySt.ninjas.field[row][col].ids.size() != 0) std::cerr << "N";
+                    //        else if (newMySt.dogs.field[row][col] != NONE) std::cerr << "D";
+                    //        else std::cerr << "X";
+                    //    }
+                    //    std::cerr << std::endl;
+                    //}
+                    //å¢Ç™ï‡Ç≠
+                    Point ninjaPoint0 = newMySt.ninjas.getPoint(0);
+                    std::queue<Point> q;
+                    q.push(ninjaPoint0);
 
-                Points points0(newMySt.Height, newMySt.Width, 0);
-                points0.field[ninjaPoint0.row][ninjaPoint0.col] = 0;
-                while (!q.empty())
-                {
-                    Point point = q.front(); q.pop();
-                    for (int dir = 0; dir < 4; dir++)
+                    Points points0(newMySt.Height, newMySt.Width, 0);
+                    points0.field[ninjaPoint0.row][ninjaPoint0.col] = 0;
+                    while (!q.empty())
                     {
-                        int nextRow = point.row + dRow[dir];
-                        int nextCol = point.col + dCol[dir];
-                        if (nextRow == 0 || nextCol == 0 || nextRow == newMySt.Height || nextCol == newMySt.Width) continue;
-                        if (newMySt.objects.field[nextRow][nextCol] == NONE && points0.field[nextRow][nextCol] == NONE)
-                        {
-                            q.push(Point(nextRow, nextCol));
-                            points0.field[nextRow][nextCol] = points0.field[point.row][point.col] + 1;
-                        }
-                    }
-                }
-                Point ninjaPoint1 = newMySt.ninjas.getPoint(1);
-                q.push(ninjaPoint1);
-
-                Points points1(newMySt.Height, newMySt.Width, 0);
-                points1.field[ninjaPoint1.row][ninjaPoint1.col] = 0;
-                while (!q.empty())
-                {
-                    Point point = q.front(); q.pop();
-                    for (int dir = 0; dir < 4; dir++)
-                    {
-                        int nextRow = point.row + dRow[dir];
-                        int nextCol = point.col + dCol[dir];
-                        if (nextRow == 0 || nextCol == 0 || nextRow == newMySt.Height || nextCol == newMySt.Width) continue;
-                        if (newMySt.objects.field[nextRow][nextCol] == NONE && points1.field[nextRow][nextCol] == NONE)
-                        {
-                            q.push(Point(nextRow, nextCol));
-                            points1.field[nextRow][nextCol] = points1.field[point.row][point.col] + 1;
-                        }
-                    }
-                }
-
-                Points points(newMySt.Height, newMySt.Width, 0);
-                for (int row = 0; row < newMySt.Height; row++)
-                {
-                    for (int col = 0; col < newMySt.Width; col++)
-                    {
-                        points.field[row][col] = std::min(points0.field[row][col], points1.field[row][col]);
-                    }
-                }
-
-                for (int dist = 0; dist < newMySt.Height+newMySt.Width; dist++)
-                {
-                    vector<int> dogList;
-                    while (true)
-                    {
-                        Point curPoint = points.getPoint(dist);
-                        if (curPoint == Point(NONE, NONE)) break;
-                        if (newMySt.dogs.field[curPoint.row][curPoint.col] != NONE)
-                        {
-                            dogList.push_back(newMySt.dogs.field[curPoint.row][curPoint.col]);
-                        }
-                        points.field[curPoint.row][curPoint.col] = points.field[curPoint.row][curPoint.col]-1;
-                    }
-                    std::sort(dogList.begin(), dogList.end());
-                    for (auto& dogId : dogList)
-                    {
+                        Point point = q.front(); q.pop();
                         for (int dir = 0; dir < 4; dir++)
                         {
-                            Point dogPoint = newMySt.dogs.getPoint(dogId);
-                            int nextRow = dogPoint.row + dRow[dir];
-                            int nextCol = dogPoint.col + dCol[dir];
-                            if (points.field[dogPoint.row][dogPoint.col] > points.field[nextRow][nextCol]
-                                && newMySt.dogs.field[nextRow][nextCol] == NONE)
+                            int nextRow = point.row + dRow[dir];
+                            int nextCol = point.col + dCol[dir];
+                            if (nextRow == 0 || nextCol == 0 || nextRow == newMySt.Height || nextCol == newMySt.Width) continue;
+                            if (newMySt.objects.field[nextRow][nextCol] == NONE && points0.field[nextRow][nextCol] == NONE)
                             {
-                                std::swap(newMySt.dogs.field[dogPoint.row][dogPoint.col], newMySt.dogs.field[nextRow][nextCol]);
-                                break;
+                                q.push(Point(nextRow, nextCol));
+                                points0.field[nextRow][nextCol] = points0.field[point.row][point.col] + 1;
                             }
                         }
                     }
-                }
-                //std::cerr << "å¢à⁄ìÆå„:" << std::endl;
-                //for (int row = 0; row < newMySt.Height; row++)
-                //{
-                //    for (int col = 0; col < newMySt.Width; col++)
-                //    {
-                //        if (newMySt.ninjas.field[row][col].ids.size() != 0) std::cerr << "N";
-                //        else if (newMySt.dogs.field[row][col] != NONE) std::cerr << "D";
-                //        else std::cerr << "X";
-                //        
-                //    }
-                //    std::cerr << std::endl;
-                //}
-                return true;
-            }())
-            {
-                int score = evaluate(newMySt, riSt);
-                if (maxScore < score)
+                    Point ninjaPoint1 = newMySt.ninjas.getPoint(1);
+                    q.push(ninjaPoint1);
+
+                    Points points1(newMySt.Height, newMySt.Width, 0);
+                    points1.field[ninjaPoint1.row][ninjaPoint1.col] = 0;
+                    while (!q.empty())
+                    {
+                        Point point = q.front(); q.pop();
+                        for (int dir = 0; dir < 4; dir++)
+                        {
+                            int nextRow = point.row + dRow[dir];
+                            int nextCol = point.col + dCol[dir];
+                            if (nextRow == 0 || nextCol == 0 || nextRow == newMySt.Height || nextCol == newMySt.Width) continue;
+                            if (newMySt.objects.field[nextRow][nextCol] == NONE && points1.field[nextRow][nextCol] == NONE)
+                            {
+                                q.push(Point(nextRow, nextCol));
+                                points1.field[nextRow][nextCol] = points1.field[point.row][point.col] + 1;
+                            }
+                        }
+                    }
+
+                    Points points(newMySt.Height, newMySt.Width, 0);
+                    for (int row = 0; row < newMySt.Height; row++)
+                    {
+                        for (int col = 0; col < newMySt.Width; col++)
+                        {
+                            //if (col != 0) std::cerr << ",";
+                            points.field[row][col] = std::min(points0.field[row][col], points1.field[row][col]);
+                            ////std::cerr << points.field[row][col];
+                        }
+                        //std::cerr << std::endl;
+                    }
+
+                    for (int dist = 0; dist < newMySt.Height + newMySt.Width; dist++)
+                    {
+                        vector<int> dogList;
+                        while (true)
+                        {
+                            Point curPoint = points.getPoint(dist);
+                            if (curPoint == Point(NONE, NONE)) break;
+                            if (newMySt.dogs.field[curPoint.row][curPoint.col] != NONE)
+                            {
+                                dogList.push_back(newMySt.dogs.field[curPoint.row][curPoint.col]);
+                            }
+                            points.field[curPoint.row][curPoint.col] = points.field[curPoint.row][curPoint.col] - 1;
+                        }
+                        std::sort(dogList.begin(), dogList.end());
+                        for (auto& dogId : dogList)
+                        {
+                            for (int dir = 0; dir < 4; dir++)
+                            {
+                                Point dogPoint = newMySt.dogs.getPoint(dogId);
+                                int nextRow = dogPoint.row + dRow[dir];
+                                int nextCol = dogPoint.col + dCol[dir];
+                                if (points.field[dogPoint.row][dogPoint.col] > points.field[nextRow][nextCol]
+                                    && newMySt.dogs.field[nextRow][nextCol] == NONE)
+                                {
+                                    std::swap(newMySt.dogs.field[dogPoint.row][dogPoint.col], newMySt.dogs.field[nextRow][nextCol]);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    //std::cerr << "å¢à⁄ìÆå„:" << std::endl;
+                    //for (int row = 0; row < newMySt.Height; row++)
+                    //{
+                    //    for (int col = 0; col < newMySt.Width; col++)
+                    //    {
+                    //        if (newMySt.ninjas.field[row][col].ids.size() != 0) std::cerr << "N";
+                    //        else if (newMySt.dogs.field[row][col] != NONE) std::cerr << "D";
+                    //        else std::cerr << "X";
+                    //        
+                    //    }
+                    //    std::cerr << std::endl;
+                    //}
+                    return true;
+                }())
                 {
-                    maxScore = score;
-                    vector<std::string> stepsStr(2, std::string(""));
-                    for (auto& dir : steps[0])
+                    int score = evaluate(newMySt, riSt);
+                    if (score > -NONE)
                     {
-                        stepsStr[0] += d[dir];
+                        if (states.isFirst)
+                        {
+                            vector<int> firstSteps(2);
+                            firstSteps[0] = step1;
+                            firstSteps[1] = step2;
+                            scores.insert(std::make_pair(score, States(newMySt, riSt, firstSteps, MU, Point(NONE, NONE))));
+                        }
+                        else
+                        {
+                            scores.insert(std::make_pair(score, States(newMySt, riSt, states.firstSteps, states.firstJitsu, states.firstPoint)));
+                        }
                     }
-                    for (auto& dir : steps[1])
-                    {
-                        stepsStr[1] += d[dir];
-                    }
-                    ret = make_tuple(newMySt, riSt, useJitsu, usePoint, stepsStr[0], stepsStr[1]);
                 }
             }
         }
+    }
+    
+    volatile int size = goodChoice.size();
+    if (goodChoice.size() != 0)
+    {
+        States bestStates = *(goodChoice.end() - 1);
+        vector<std::string> stepsStr(2, std::string(""));
+        for (auto& dir : enableSteps[bestStates.firstSteps[0]])
+        {
+            stepsStr[0] += d[dir];
+        }
+        for (auto& dir : enableSteps[bestStates.firstSteps[1]])
+        {
+            stepsStr[1] += d[dir];
+        }
+        ret = make_tuple(bestStates.firstJitsu, bestStates.firstPoint, stepsStr[0], stepsStr[1]);
+    }
+    else
+    {
+
     }
     return ret;
 }
@@ -445,26 +555,24 @@ void thinkAndRun()
     using std::string;
     std::vector<string> nextDir(2);
     auto nextAction = predict(myState, rivalState);
-    if (get<4>(nextAction) == "") cout << 3 << endl << "7 0" << endl;
-    else if (get<5>(nextAction) == "") cout << 3 << endl << "7 1" << endl;
-    else if (get<2>(nextAction) == MU) cout << 2 << endl;
-    else if (get<2>(nextAction) == SYUNSIN)
+    if (get<0>(nextAction) == MU) cout << 2 << endl;
+    else if (get<0>(nextAction) == SYUNSIN)
     {
         cout << 3 << endl;
-        cout << get<2>(nextAction) << endl;
+        cout << get<0>(nextAction) << endl;
     }
-    else if (get<2>(nextAction) == TENSOUMETSU)
+    else if (get<0>(nextAction) == TENSOUMETSU)
     {
         cout << 3 << endl;
-        cout << get<2>(nextAction) << " " << get<3>(nextAction).row << endl;
+        cout << get<0>(nextAction) << " " << get<1>(nextAction).row << endl;
     }
     else
     {
         cout << 3 << endl;
-        cout << get<2>(nextAction) << " " << get<3>(nextAction).row << " " << get<3>(nextAction).col << endl;
+        cout << get<0>(nextAction) << " " << get<1>(nextAction).row << " " << get<1>(nextAction).col << endl;
     }
-    cout << get<4>(nextAction) << endl;
-    cout << get<5>(nextAction) << endl;
+    cout << get<2>(nextAction) << endl;
+    cout << get<3>(nextAction) << endl;
 }
 
 
